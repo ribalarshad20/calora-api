@@ -4,6 +4,7 @@ import { WorkoutSessionModel } from '../../infra/db/models/workout-session.js';
 import { ProfileModel } from '../../infra/db/models/profile.js';
 import { AppError } from '../../lib/errors.js';
 import { parseDateKey } from '../../lib/date.js';
+import { EXERCISE_CATALOG } from './exercise-catalog.js';
 
 const setSchema = z.object({
   setNumber: z.number().int().min(1),
@@ -157,28 +158,23 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(204).send();
   });
 
-  /** Common exercise library for quick-add (Hevy-like). */
-  app.get('/exercise-library', async () => ({
-    data: [
-      { name: 'Barbell Bench Press', muscleGroup: 'Chest' },
-      { name: 'Incline Dumbbell Press', muscleGroup: 'Chest' },
-      { name: 'Cable Fly', muscleGroup: 'Chest' },
-      { name: 'Pull Up', muscleGroup: 'Back' },
-      { name: 'Barbell Row', muscleGroup: 'Back' },
-      { name: 'Lat Pulldown', muscleGroup: 'Back' },
-      { name: 'Overhead Press', muscleGroup: 'Shoulders' },
-      { name: 'Lateral Raise', muscleGroup: 'Shoulders' },
-      { name: 'Barbell Squat', muscleGroup: 'Legs' },
-      { name: 'Romanian Deadlift', muscleGroup: 'Legs' },
-      { name: 'Leg Press', muscleGroup: 'Legs' },
-      { name: 'Walking Lunge', muscleGroup: 'Legs' },
-      { name: 'Barbell Curl', muscleGroup: 'Arms' },
-      { name: 'Tricep Pushdown', muscleGroup: 'Arms' },
-      { name: 'Skull Crusher', muscleGroup: 'Arms' },
-      { name: 'Plank', muscleGroup: 'Core' },
-      { name: 'Hanging Leg Raise', muscleGroup: 'Core' },
-      { name: 'Treadmill Run', muscleGroup: 'Cardio' },
-      { name: 'Assault Bike', muscleGroup: 'Cardio' },
-    ],
-  }));
+  app.get('/exercise-library', async (req) => {
+    const q = z
+      .object({
+        q: z.string().optional(),
+        muscleGroup: z.string().optional(),
+      })
+      .parse(req.query);
+    const needle = q.q?.trim().toLowerCase() ?? '';
+    const group = q.muscleGroup?.trim().toLowerCase() ?? '';
+    const data = EXERCISE_CATALOG.filter((item) => {
+      if (group && item.muscleGroup.toLowerCase() !== group) return false;
+      if (!needle) return true;
+      return (
+        item.name.toLowerCase().includes(needle) ||
+        item.muscleGroup.toLowerCase().includes(needle)
+      );
+    });
+    return { data };
+  });
 };

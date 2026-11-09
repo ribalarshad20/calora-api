@@ -33,6 +33,12 @@ const diaryEntrySchema = new Schema(
     barcode: { type: String, default: null },
     idempotencyKey: { type: String, default: null },
     notes: { type: String, default: '' },
+    mood: {
+      type: String,
+      enum: ['great', 'good', 'okay', 'low', 'rough', ''],
+      default: '',
+    },
+    moodScore: { type: Number, min: 1, max: 5, default: null },
   },
   { timestamps: true },
 );

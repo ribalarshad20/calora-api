@@ -22,6 +22,8 @@ const createBody = z.object({
   barcode: z.string().nullable().optional(),
   idempotencyKey: z.string().max(80).nullable().optional(),
   notes: z.string().max(500).optional(),
+  mood: z.enum(['great', 'good', 'okay', 'low', 'rough', '']).optional(),
+  moodScore: z.number().int().min(1).max(5).nullable().optional(),
 });
 
 export const diaryRoutes: FastifyPluginAsync = async (app) => {
@@ -57,6 +59,8 @@ export const diaryRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().max(500).optional(),
         name: z.string().min(1).max(200).optional(),
         mealType: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).optional(),
+        mood: z.enum(['great', 'good', 'okay', 'low', 'rough', '']).optional(),
+        moodScore: z.number().int().min(1).max(5).nullable().optional(),
       })
       .parse(req.body);
     const updated = await DiaryEntryModel.findOneAndUpdate(
@@ -75,6 +79,8 @@ export const diaryRoutes: FastifyPluginAsync = async (app) => {
         macros: updated.macros,
         source: updated.source,
         notes: updated.notes,
+        mood: updated.mood ?? '',
+        moodScore: updated.moodScore ?? null,
       },
     };
   });

@@ -23,6 +23,8 @@ export type CreateEntryInput = {
   barcode?: string | null;
   idempotencyKey?: string | null;
   notes?: string;
+  mood?: 'great' | 'good' | 'okay' | 'low' | 'rough' | '';
+  moodScore?: number | null;
 };
 
 function serializeEntry(doc: InstanceType<typeof DiaryEntryModel>) {
@@ -39,6 +41,8 @@ function serializeEntry(doc: InstanceType<typeof DiaryEntryModel>) {
     source: doc.source,
     barcode: doc.barcode,
     notes: doc.notes,
+    mood: doc.mood ?? '',
+    moodScore: doc.moodScore ?? null,
     createdAt: doc.createdAt,
   };
 }

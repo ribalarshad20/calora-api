@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { FoodCustomModel } from '../../infra/db/models/food-custom.js';
 import { fetchByBarcode, searchOff } from './off.js';
+import { FOOD_CATALOG, searchFoodCatalog } from './catalog.js';
 
 const customBody = z.object({
   name: z.string().min(1).max(200),
@@ -15,8 +16,34 @@ const customBody = z.object({
   favorite: z.boolean().optional(),
 });
 
+function serializeCatalogItem(c: (typeof FOOD_CATALOG)[number]) {
+  return {
+    id: c.id,
+    name: c.name,
+    brand: c.brand,
+    category: c.category,
+    servingUnit: c.servingUnit,
+    servingGrams: c.servingGrams,
+    calories: c.calories,
+    proteinG: c.proteinG,
+    carbsG: c.carbsG,
+    fatG: c.fatG,
+  };
+}
+
 export const foodsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.authenticate);
+
+  app.get('/catalog', async (req) => {
+    const q = z
+      .object({
+        category: z.enum(['pakistani', 'fast_food']).optional(),
+        q: z.string().optional(),
+      })
+      .parse(req.query);
+    const items = searchFoodCatalog(q.q ?? '', q.category);
+    return { data: items.map(serializeCatalogItem) };
+  });
 
   app.get('/search', async (req) => {
     const q = z
@@ -26,14 +53,16 @@ export const foodsRoutes: FastifyPluginAsync = async (app) => {
       })
       .parse(req.query);
 
+    const catalog = searchFoodCatalog(q.q).slice(0, 30).map(serializeCatalogItem);
     const off = await searchOff(app.env, q.q, q.page ?? 1);
-    let custom = await FoodCustomModel.find({
+    const custom = await FoodCustomModel.find({
       userId: req.userId,
       name: { $regex: q.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
     }).limit(20);
 
     return {
       data: {
+        catalog,
         openFoodFacts: off,
         custom: custom.map((c) => ({
           id: c._id.toString(),
@@ -46,6 +75,7 @@ export const foodsRoutes: FastifyPluginAsync = async (app) => {
           carbsG: c.carbsG,
           fatG: c.fatG,
           favorite: c.favorite,
+          category: 'custom',
         })),
       },
     };
