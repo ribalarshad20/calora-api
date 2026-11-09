@@ -14,6 +14,7 @@ import { profileRoutes } from './modules/profile/routes.js';
 import { diaryRoutes } from './modules/diary/routes.js';
 import { foodsRoutes } from './modules/foods/routes.js';
 import { activityRoutes } from './modules/activity/routes.js';
+import { sessionRoutes } from './modules/activity/sessions.js';
 import { waterRoutes } from './modules/water/routes.js';
 import { weightRoutes } from './modules/weight/routes.js';
 import { aiRoutes } from './modules/ai/routes.js';
@@ -90,6 +91,7 @@ export async function buildApp(env: Env) {
   await app.register(diaryRoutes, { prefix: '/v1/diary' });
   await app.register(foodsRoutes, { prefix: '/v1/foods' });
   await app.register(activityRoutes, { prefix: '/v1/activity' });
+  await app.register(sessionRoutes, { prefix: '/v1/activity' });
   await app.register(waterRoutes, { prefix: '/v1/water' });
   await app.register(weightRoutes, { prefix: '/v1/weight' });
   await app.register(aiRoutes, { prefix: '/v1/ai' });

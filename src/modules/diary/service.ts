@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { DiaryEntryModel } from '../../infra/db/models/diary-entry.js';
 import { ActivityDayModel } from '../../infra/db/models/activity-day.js';
 import { WorkoutModel } from '../../infra/db/models/workout.js';
+import { WorkoutSessionModel } from '../../infra/db/models/workout-session.js';
 import { ProfileModel } from '../../infra/db/models/profile.js';
 import { WaterLogModel } from '../../infra/db/models/water-log.js';
 import { DayJournalModel } from '../../infra/db/models/day-journal.js';
@@ -78,14 +79,16 @@ export async function deleteEntry(userId: string, id: string) {
 
 export async function getDaySummary(userId: string, dateRaw: string) {
   const date = parseDateKey(dateRaw);
-  const [entries, activity, workouts, waterLogs, profile, journal] = await Promise.all([
-    DiaryEntryModel.find({ userId, date }),
-    ActivityDayModel.findOne({ userId, date }),
-    WorkoutModel.find({ userId, date }),
-    WaterLogModel.find({ userId, date }),
-    ProfileModel.findOne({ userId }),
-    DayJournalModel.findOne({ userId, date }),
-  ]);
+  const [entries, activity, workouts, sessions, waterLogs, profile, journal] =
+    await Promise.all([
+      DiaryEntryModel.find({ userId, date }),
+      ActivityDayModel.findOne({ userId, date }),
+      WorkoutModel.find({ userId, date }),
+      WorkoutSessionModel.find({ userId, date }),
+      WaterLogModel.find({ userId, date }),
+      ProfileModel.findOne({ userId }),
+      DayJournalModel.findOne({ userId, date }),
+    ]);
 
   const food = entries.reduce(
     (acc, e) => {
@@ -98,7 +101,9 @@ export async function getDaySummary(userId: string, dateRaw: string) {
     { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
   );
 
-  const workoutCalories = workouts.reduce((s, w) => s + w.caloriesBurned, 0);
+  const workoutCalories =
+    workouts.reduce((s, w) => s + w.caloriesBurned, 0) +
+    sessions.reduce((s, w) => s + (w.caloriesBurned ?? 0), 0);
   const stepCalories = activity?.stepCalories ?? 0;
   const activeCalories = activity?.activeCalories ?? 0;
   const burned = workoutCalories + Math.max(stepCalories, activeCalories);
@@ -147,12 +152,23 @@ export async function getDaySummary(userId: string, dateRaw: string) {
       sleepQuality: journal?.sleepQuality ?? null,
     },
     entries: entries.map(serializeEntry),
-    workouts: workouts.map((w) => ({
-      id: w._id.toString(),
-      type: w.type,
-      label: w.label,
-      durationMin: w.durationMin,
-      caloriesBurned: w.caloriesBurned,
-    })),
+    workouts: [
+      ...workouts.map((w) => ({
+        id: w._id.toString(),
+        type: w.type,
+        label: w.label,
+        durationMin: w.durationMin,
+        caloriesBurned: w.caloriesBurned,
+        kind: 'simple' as const,
+      })),
+      ...sessions.map((w) => ({
+        id: w._id.toString(),
+        type: 'session',
+        label: w.title || 'Workout',
+        durationMin: w.durationMin,
+        caloriesBurned: w.caloriesBurned,
+        kind: 'session' as const,
+      })),
+    ],
   };
 }
