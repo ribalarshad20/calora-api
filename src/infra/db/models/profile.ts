@@ -22,8 +22,18 @@ const profileSchema = new Schema(
     waterGoalMl: { type: Number, default: 2500 },
     theme: {
       type: String,
-      enum: ['sage_mist', 'dawn_cream', 'harbor_calm', 'midnight'],
-      default: 'sage_mist',
+      enum: [
+        'cyber_active',
+        'bio_mint',
+        'nordic_calm',
+        'synth_violet',
+        // legacy keys (migrated client-side)
+        'sage_mist',
+        'dawn_cream',
+        'harbor_calm',
+        'midnight',
+      ],
+      default: 'nordic_calm',
     },
   },
   { timestamps: true },

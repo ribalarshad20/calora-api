@@ -13,11 +13,22 @@ const upsertBody = z.object({
   goal: z.enum(['lose', 'maintain', 'gain']),
   activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active', 'very_active']),
   waterGoalMl: z.number().int().min(500).max(8000).optional(),
-  theme: z.enum(['sage_mist', 'dawn_cream', 'harbor_calm', 'midnight']).optional(),
+  theme: z
+    .enum([
+      'cyber_active',
+      'bio_mint',
+      'nordic_calm',
+      'synth_violet',
+      'sage_mist',
+      'dawn_cream',
+      'harbor_calm',
+      'midnight',
+    ])
+    .optional(),
 });
 
 const themeBody = z.object({
-  theme: z.enum(['sage_mist', 'dawn_cream', 'harbor_calm', 'midnight']),
+  theme: z.enum(['cyber_active', 'bio_mint', 'nordic_calm', 'synth_violet']),
 });
 
 function serialize(doc: InstanceType<typeof ProfileModel>) {
@@ -61,7 +72,7 @@ export const profileRoutes: FastifyPluginAsync = async (app) => {
           ...body,
           ...targets,
           waterGoalMl: body.waterGoalMl ?? 2500,
-          theme: body.theme ?? 'sage_mist',
+          theme: body.theme ?? 'nordic_calm',
         },
       },
       { upsert: true, new: true },

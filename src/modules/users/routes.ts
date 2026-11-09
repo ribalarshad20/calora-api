@@ -16,7 +16,7 @@ export const usersRoutes: FastifyPluginAsync = async (app) => {
         email: user.email,
         name: user.name,
         onboardingComplete: user.onboardingComplete,
-        theme: profile?.theme ?? 'sage_mist',
+        theme: profile?.theme ?? 'nordic_calm',
         hasProfile: Boolean(profile),
       },
     };
