@@ -22,7 +22,7 @@ const profileSchema = new Schema(
     waterGoalMl: { type: Number, default: 2500 },
     theme: {
       type: String,
-      enum: ['sage_mist', 'dawn_cream', 'harbor_calm'],
+      enum: ['sage_mist', 'dawn_cream', 'harbor_calm', 'midnight'],
       default: 'sage_mist',
     },
   },

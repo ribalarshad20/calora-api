@@ -13,11 +13,11 @@ const upsertBody = z.object({
   goal: z.enum(['lose', 'maintain', 'gain']),
   activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active', 'very_active']),
   waterGoalMl: z.number().int().min(500).max(8000).optional(),
-  theme: z.enum(['sage_mist', 'dawn_cream', 'harbor_calm']).optional(),
+  theme: z.enum(['sage_mist', 'dawn_cream', 'harbor_calm', 'midnight']).optional(),
 });
 
 const themeBody = z.object({
-  theme: z.enum(['sage_mist', 'dawn_cream', 'harbor_calm']),
+  theme: z.enum(['sage_mist', 'dawn_cream', 'harbor_calm', 'midnight']),
 });
 
 function serialize(doc: InstanceType<typeof ProfileModel>) {
