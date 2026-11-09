@@ -4,6 +4,7 @@ import { ActivityDayModel } from '../../infra/db/models/activity-day.js';
 import { WorkoutModel } from '../../infra/db/models/workout.js';
 import { ProfileModel } from '../../infra/db/models/profile.js';
 import { WaterLogModel } from '../../infra/db/models/water-log.js';
+import { DayJournalModel } from '../../infra/db/models/day-journal.js';
 import { AppError } from '../../lib/errors.js';
 import { parseDateKey } from '../../lib/date.js';
 
@@ -77,12 +78,13 @@ export async function deleteEntry(userId: string, id: string) {
 
 export async function getDaySummary(userId: string, dateRaw: string) {
   const date = parseDateKey(dateRaw);
-  const [entries, activity, workouts, waterLogs, profile] = await Promise.all([
+  const [entries, activity, workouts, waterLogs, profile, journal] = await Promise.all([
     DiaryEntryModel.find({ userId, date }),
     ActivityDayModel.findOne({ userId, date }),
     WorkoutModel.find({ userId, date }),
     WaterLogModel.find({ userId, date }),
     ProfileModel.findOne({ userId }),
+    DayJournalModel.findOne({ userId, date }),
   ]);
 
   const food = entries.reduce(
@@ -138,6 +140,11 @@ export async function getDaySummary(userId: string, dateRaw: string) {
       stepsSource: activity?.source ?? null,
       waterMl,
       entryCount: entries.length,
+      mood: journal?.mood || '',
+      moodScore: journal?.moodScore ?? null,
+      dayNote: journal?.dayNote || '',
+      energy: journal?.energy ?? null,
+      sleepQuality: journal?.sleepQuality ?? null,
     },
     entries: entries.map(serializeEntry),
     workouts: workouts.map((w) => ({

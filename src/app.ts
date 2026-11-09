@@ -18,6 +18,7 @@ import { waterRoutes } from './modules/water/routes.js';
 import { weightRoutes } from './modules/weight/routes.js';
 import { aiRoutes } from './modules/ai/routes.js';
 import { insightsRoutes } from './modules/insights/routes.js';
+import { journalRoutes } from './modules/journal/routes.js';
 import mongoose from 'mongoose';
 
 declare module 'fastify' {
@@ -93,6 +94,7 @@ export async function buildApp(env: Env) {
   await app.register(weightRoutes, { prefix: '/v1/weight' });
   await app.register(aiRoutes, { prefix: '/v1/ai' });
   await app.register(insightsRoutes, { prefix: '/v1/insights' });
+  await app.register(journalRoutes, { prefix: '/v1/journal' });
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ZodError) {

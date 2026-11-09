@@ -1,5 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { DiaryEntryModel } from '../../infra/db/models/diary-entry.js';
+import { AppError } from '../../lib/errors.js';
 import * as diary from './service.js';
 
 const createBody = z.object({
@@ -46,6 +48,35 @@ export const diaryRoutes: FastifyPluginAsync = async (app) => {
     const body = createBody.parse(req.body);
     const entry = await diary.createEntry({ userId: req.userId, ...body });
     return reply.code(201).send({ data: entry });
+  });
+
+  app.patch('/entries/:id', async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const body = z
+      .object({
+        notes: z.string().max(500).optional(),
+        name: z.string().min(1).max(200).optional(),
+        mealType: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).optional(),
+      })
+      .parse(req.body);
+    const updated = await DiaryEntryModel.findOneAndUpdate(
+      { _id: id, userId: req.userId },
+      { $set: body },
+      { new: true },
+    );
+    if (!updated) throw new AppError(404, 'Entry not found', 'ENTRY_NOT_FOUND');
+    return {
+      data: {
+        id: updated._id.toString(),
+        date: updated.date,
+        mealType: updated.mealType,
+        name: updated.name,
+        brand: updated.brand,
+        macros: updated.macros,
+        source: updated.source,
+        notes: updated.notes,
+      },
+    };
   });
 
   app.delete('/entries/:id', async (req, reply) => {
