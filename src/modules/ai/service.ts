@@ -57,9 +57,15 @@ function extractJson(text: string): unknown {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
-const SYSTEM_PROMPT = `You are Calora, a nutrition estimator. Return ONLY valid JSON:
+const SYSTEM_PROMPT = `You are Calora, a nutrition estimator for everyday logging. Return ONLY valid JSON:
 {"items":[{"name":string,"grams":number|null,"servingQty":number,"servingUnit":string,"calories":number,"proteinG":number,"carbsG":number,"fatG":number,"confidence":0-1}],"notes":string}
-Estimate realistic macros. Prefer grams when possible. Be conservative on calories. Schema version: meal_parse_v1.`;
+Rules:
+- Split multi-food meals into separate items.
+- Honor explicit amounts (g, kg, ml, cups, pieces, bowls, plates, handfuls).
+- If the user gives grams/weight, set grams and scale macros to that amount.
+- Prefer realistic home/restaurant portions when amount is vague.
+- Be slightly conservative on calories. Include Pakistani & common fast foods when named.
+- Schema version: meal_parse_v1.`;
 
 export async function parseMealText(
   env: Env,
@@ -149,29 +155,77 @@ export async function parseMealPhoto(
   return mealParseSchema.parse(extractJson(text));
 }
 
+type Per100 = { kcal: number; p: number; c: number; f: number };
+
+const HEURISTIC_FOODS: Array<{ match: RegExp; per100: Per100; defaultG: number }> = [
+  { match: /chicken|murgh/i, per100: { kcal: 165, p: 31, c: 0, f: 3.6 }, defaultG: 150 },
+  { match: /beef|steak|keema/i, per100: { kcal: 250, p: 26, c: 0, f: 15 }, defaultG: 150 },
+  { match: /egg/i, per100: { kcal: 155, p: 13, c: 1.1, f: 11 }, defaultG: 50 },
+  { match: /rice|biryani|pulao/i, per100: { kcal: 130, p: 2.7, c: 28, f: 0.3 }, defaultG: 180 },
+  { match: /roti|chapati|naan|paratha/i, per100: { kcal: 300, p: 8, c: 50, f: 7 }, defaultG: 60 },
+  { match: /dal|daal|lentil/i, per100: { kcal: 116, p: 9, c: 20, f: 0.4 }, defaultG: 200 },
+  { match: /salad|lettuce|cucumber/i, per100: { kcal: 25, p: 1.5, c: 4, f: 0.2 }, defaultG: 120 },
+  { match: /bread|toast/i, per100: { kcal: 265, p: 9, c: 49, f: 3.2 }, defaultG: 30 },
+  { match: /milk|lassi/i, per100: { kcal: 60, p: 3.2, c: 5, f: 3.3 }, defaultG: 250 },
+  { match: /yogurt|dahi/i, per100: { kcal: 60, p: 3.5, c: 4.7, f: 3.3 }, defaultG: 150 },
+  { match: /banana/i, per100: { kcal: 89, p: 1.1, c: 23, f: 0.3 }, defaultG: 120 },
+  { match: /apple/i, per100: { kcal: 52, p: 0.3, c: 14, f: 0.2 }, defaultG: 180 },
+  { match: /burger|fries|pizza|nugget/i, per100: { kcal: 280, p: 12, c: 28, f: 14 }, defaultG: 180 },
+  { match: /oil|butter|ghee/i, per100: { kcal: 884, p: 0, c: 0, f: 100 }, defaultG: 10 },
+  { match: /coffee|tea|chai/i, per100: { kcal: 2, p: 0.1, c: 0, f: 0 }, defaultG: 200 },
+];
+
+function parseAmountGrams(chunk: string): number | null {
+  const g = chunk.match(/(\d+(?:\.\d+)?)\s*(?:g|gram|grams)\b/i);
+  if (g) return Math.round(Number(g[1]));
+  const kg = chunk.match(/(\d+(?:\.\d+)?)\s*kg\b/i);
+  if (kg) return Math.round(Number(kg[1]) * 1000);
+  const cups = chunk.match(/(\d+(?:\.\d+)?)\s*cups?\b/i);
+  if (cups) return Math.round(Number(cups[1]) * 180);
+  const pcs = chunk.match(/(\d+(?:\.\d+)?)\s*(?:pcs?|pieces?|eggs?)\b/i);
+  if (pcs) return null; // handled via multiplier below
+  return null;
+}
+
+function pieceMultiplier(chunk: string): number {
+  const m = chunk.match(/(\d+(?:\.\d+)?)\s*(?:pcs?|pieces?|x|×)?\b/i);
+  if (m && /egg|roti|toast|banana|apple|burger/i.test(chunk)) {
+    return Math.max(1, Number(m[1]));
+  }
+  const leading = chunk.match(/^(\d+(?:\.\d+)?)\s+/);
+  if (leading && !/g|kg|ml|cup/i.test(chunk)) return Math.max(1, Number(leading[1]));
+  return 1;
+}
+
 /** Offline-friendly fallback when Groq key is missing (dev / demo). */
 function heuristicParse(text: string): ParsedMeal {
   const parts = text
-    .split(/,| and | \+ | with /i)
+    .split(/,| and | \+ |;|\n/i)
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 8);
 
-  const items = (parts.length ? parts : [text]).map((name) => ({
-    name,
-    grams: 100,
-    servingQty: 1,
-    servingUnit: 'serving',
-    calories: 150,
-    proteinG: 8,
-    carbsG: 15,
-    fatG: 6,
-    confidence: 0.35,
-  }));
+  const items = (parts.length ? parts : [text]).map((chunk) => {
+    const hit = HEURISTIC_FOODS.find((f) => f.match.test(chunk));
+    const per = hit?.per100 ?? { kcal: 150, p: 8, c: 15, f: 6 };
+    const grams = parseAmountGrams(chunk) ?? Math.round((hit?.defaultG ?? 100) * pieceMultiplier(chunk));
+    const scale = grams / 100;
+    return {
+      name: chunk,
+      grams,
+      servingQty: 1,
+      servingUnit: 'g',
+      calories: Math.round(per.kcal * scale),
+      proteinG: Math.round(per.p * scale * 10) / 10,
+      carbsG: Math.round(per.c * scale * 10) / 10,
+      fatG: Math.round(per.f * scale * 10) / 10,
+      confidence: hit ? 0.55 : 0.3,
+    };
+  });
 
   return {
     items,
-    notes: 'Heuristic estimate (configure GROQ_API_KEY for AI accuracy).',
+    notes: 'Local estimate — set GROQ_API_KEY on the API for smarter AI parsing.',
   };
 }
 

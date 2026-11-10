@@ -7,11 +7,14 @@ heroku config:set HOST=0.0.0.0
 heroku config:set MONGODB_URI="your-atlas-uri"
 heroku config:set JWT_ACCESS_SECRET="at-least-32-characters-long!!"
 heroku config:set JWT_REFRESH_SECRET="at-least-32-characters-long!!"
-# optional:
-# heroku config:set GROQ_API_KEY=...
-# heroku config:set GEMINI_API_KEY=...
-# heroku config:set INVITE_CODE=...
-# heroku config:set CORS_ORIGINS=*
+# Required for smart “type what you ate” AI logging (pipeline Config Vars):
+# GROQ_API_KEY=...
+# GROQ_MODEL=llama-3.3-70b-versatile
+# Optional photo logging:
+# GEMINI_API_KEY=...
+# GEMINI_MODEL=gemini-2.0-flash
+# INVITE_CODE=...
+# CORS_ORIGINS=*
 
 git push heroku main
 heroku open /health
