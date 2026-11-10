@@ -197,12 +197,12 @@ export async function parseMealPhoto(
     }
 
     lastErr = (await res.text()).slice(0, 240);
-    // Retired / unknown model IDs → try next. Other errors stop (quota, bad image, etc.).
-    if (
-      !/no longer available|not found|is not found|NOT_FOUND|does not exist/i.test(
+    // Retired models + transient overload → try next. Hard failures stop.
+    const retryable =
+      /no longer available|not found|is not found|NOT_FOUND|does not exist|high demand|UNAVAILABLE|resource exhausted|try again later|503/i.test(
         lastErr,
-      )
-    ) {
+      );
+    if (!retryable) {
       throw new AppError(502, `Gemini error: ${lastErr}`, 'GEMINI_ERROR');
     }
   }
