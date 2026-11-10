@@ -140,6 +140,13 @@ export async function parseMealText(
   }
 }
 
+const GEMINI_FALLBACK_MODELS = [
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3-flash-preview',
+  'gemini-flash-latest',
+] as const;
+
 export async function parseMealPhoto(
   env: Env,
   userId: string,
@@ -157,35 +164,50 @@ export async function parseMealPhoto(
 
   await bumpUsage(env, userId, 'photo');
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`;
   const prompt = `${SYSTEM_PROMPT}\nIdentify foods in this meal photo and estimate portions.${hint ? `\nUser hint: ${hint}` : ''}`;
+  const models = Array.from(
+    new Set([env.GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS].filter(Boolean)),
+  );
+  let lastErr = 'Gemini unavailable';
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType, data: imageBase64 } },
-          ],
-        },
-      ],
-      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-    }),
-  });
+  for (const model of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mimeType, data: imageBase64 } },
+            ],
+          },
+        ],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+      }),
+    });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new AppError(502, `Gemini error: ${body.slice(0, 200)}`, 'GEMINI_ERROR');
+    if (res.ok) {
+      const json = (await res.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+      return mealParseSchema.parse(extractJson(text));
+    }
+
+    lastErr = (await res.text()).slice(0, 240);
+    // Retired / unknown model IDs → try next. Other errors stop (quota, bad image, etc.).
+    if (
+      !/no longer available|not found|is not found|NOT_FOUND|does not exist/i.test(
+        lastErr,
+      )
+    ) {
+      throw new AppError(502, `Gemini error: ${lastErr}`, 'GEMINI_ERROR');
+    }
   }
 
-  const json = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-  return mealParseSchema.parse(extractJson(text));
+  throw new AppError(502, `Gemini error: ${lastErr}`, 'GEMINI_ERROR');
 }
 
 type Per100 = { kcal: number; p: number; c: number; f: number };

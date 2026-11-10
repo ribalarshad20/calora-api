@@ -19,20 +19,18 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export async function fetchByBarcode(env: Env, barcode: string): Promise<OffProduct> {
-  const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': env.OPEN_FOOD_FACTS_USER_AGENT },
-  });
-  if (!res.ok) throw new AppError(502, 'Open Food Facts unavailable', 'OFF_UNAVAILABLE');
-  const json = (await res.json()) as {
-    status: number;
-    product?: Record<string, unknown>;
-  };
-  if (json.status !== 1 || !json.product) {
-    throw new AppError(404, 'Product not found', 'PRODUCT_NOT_FOUND');
-  }
-  const p = json.product;
+/** Digits only + common UPC-A → EAN-13 padding so OFF lookups succeed more often. */
+export function normalizeBarcode(raw: string): string[] {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 4) return [];
+  const out = new Set<string>([digits]);
+  if (digits.length === 12) out.add(`0${digits}`); // UPC-A → EAN-13
+  if (digits.length === 13 && digits.startsWith('0')) out.add(digits.slice(1));
+  if (digits.length === 8) out.add(digits); // EAN-8
+  return [...out];
+}
+
+function mapOffProduct(barcode: string, p: Record<string, unknown>): OffProduct {
   const nutriments = (p.nutriments ?? {}) as Record<string, unknown>;
   return {
     barcode,
@@ -46,6 +44,62 @@ export async function fetchByBarcode(env: Env, barcode: string): Promise<OffProd
     fatG: num(nutriments.fat_100g),
     imageUrl: (p.image_front_small_url as string) || (p.image_url as string) || null,
   };
+}
+
+async function fetchOffProduct(
+  env: Env,
+  barcode: string,
+): Promise<OffProduct | null> {
+  const headers = { 'User-Agent': env.OPEN_FOOD_FACTS_USER_AGENT };
+
+  // Prefer v2, then legacy v0 — some regional codes only resolve on one.
+  const urls = [
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`,
+    `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers });
+      if (!res.ok) continue;
+      const json = (await res.json()) as {
+        status?: number;
+        product?: Record<string, unknown>;
+      };
+      if (json.status === 1 && json.product) {
+        return mapOffProduct(barcode, json.product);
+      }
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
+export async function fetchByBarcode(env: Env, barcode: string): Promise<OffProduct> {
+  const candidates = normalizeBarcode(barcode);
+  if (candidates.length === 0) {
+    throw new AppError(400, 'Invalid barcode', 'INVALID_BARCODE');
+  }
+
+  let lastNetworkFail = false;
+  for (const code of candidates) {
+    try {
+      const product = await fetchOffProduct(env, code);
+      if (product) return product;
+    } catch {
+      lastNetworkFail = true;
+    }
+  }
+
+  if (lastNetworkFail) {
+    throw new AppError(502, 'Open Food Facts unavailable', 'OFF_UNAVAILABLE');
+  }
+  throw new AppError(
+    404,
+    'Product not found in Open Food Facts. Try Browse or Describe meal instead.',
+    'PRODUCT_NOT_FOUND',
+  );
 }
 
 export async function searchOff(env: Env, query: string, page = 1): Promise<OffProduct[]> {

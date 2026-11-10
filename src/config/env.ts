@@ -14,7 +14,7 @@ const envSchema = z.object({
   GROQ_API_KEY: z.string().optional().default(''),
   GROQ_MODEL: z.string().default('openai/gpt-oss-20b'),
   GEMINI_API_KEY: z.string().optional().default(''),
-  GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
   AI_DAILY_TEXT_LIMIT: z.coerce.number().int().positive().default(40),
   AI_DAILY_PHOTO_LIMIT: z.coerce.number().int().positive().default(15),
   OPEN_FOOD_FACTS_USER_AGENT: z

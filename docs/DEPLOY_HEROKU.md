@@ -12,7 +12,7 @@ heroku config:set JWT_REFRESH_SECRET="at-least-32-characters-long!!"
 # GROQ_MODEL=openai/gpt-oss-20b
 # Optional photo logging:
 # GEMINI_API_KEY=...
-# GEMINI_MODEL=gemini-2.0-flash
+# GEMINI_MODEL=gemini-3.5-flash
 # INVITE_CODE=...
 # CORS_ORIGINS=*
 
