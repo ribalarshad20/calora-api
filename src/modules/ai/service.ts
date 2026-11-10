@@ -67,6 +67,49 @@ Rules:
 - Be slightly conservative on calories. Include Pakistani & common fast foods when named.
 - Schema version: meal_parse_v1.`;
 
+const GROQ_FALLBACK_MODELS = ['openai/gpt-oss-20b', 'qwen/qwen3.8-27b'] as const;
+
+async function groqJsonCompletion(
+  env: Env,
+  messages: Array<{ role: string; content: string }>,
+): Promise<string> {
+  const models = Array.from(
+    new Set([env.GROQ_MODEL, ...GROQ_FALLBACK_MODELS].filter(Boolean)),
+  );
+  let lastErr = 'Groq unavailable';
+
+  for (const model of models) {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        messages,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (res.ok) {
+      const json = (await res.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      return json.choices[0]?.message?.content ?? '{}';
+    }
+
+    lastErr = (await res.text()).slice(0, 240);
+    // Try next model on missing/decommissioned IDs; otherwise stop.
+    if (!/model_not_found|decommissioned|does not exist/i.test(lastErr)) {
+      throw new AppError(502, `Groq error: ${lastErr}`, 'GROQ_ERROR');
+    }
+  }
+
+  throw new AppError(502, `Groq error: ${lastErr}`, 'GROQ_ERROR');
+}
+
 export async function parseMealText(
   env: Env,
   userId: string,
@@ -78,33 +121,23 @@ export async function parseMealText(
 
   await bumpUsage(env, userId, 'text');
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: env.GROQ_MODEL,
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: text },
-      ],
-      response_format: { type: 'json_object' },
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new AppError(502, `Groq error: ${body.slice(0, 200)}`, 'GROQ_ERROR');
+  try {
+    const content = await groqJsonCompletion(env, [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: text },
+    ]);
+    return mealParseSchema.parse(extractJson(content));
+  } catch (err) {
+    // Keep food logging usable if Groq model config is stale on deploy.
+    if (err instanceof AppError && err.code === 'GROQ_ERROR') {
+      const fallback = heuristicParse(text);
+      return {
+        ...fallback,
+        notes: `${fallback.notes ?? ''} (AI temporarily unavailable)`.trim(),
+      };
+    }
+    throw err;
   }
-
-  const json = (await res.json()) as {
-    choices: Array<{ message: { content: string } }>;
-  };
-  const content = json.choices[0]?.message?.content ?? '{}';
-  return mealParseSchema.parse(extractJson(content));
 }
 
 export async function parseMealPhoto(
@@ -240,31 +273,42 @@ export async function coachingReply(
   }
   await bumpUsage(env, userId, 'text');
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: env.GROQ_MODEL,
-      temperature: 0.5,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are Calora, a calm nutrition coach. Be concise, kind, non-medical. Use the user context. Avoid shame.',
-        },
-        { role: 'user', content: `Context:\n${context}\n\nQuestion:\n${message}` },
-      ],
-    }),
-  });
+  const models = Array.from(
+    new Set([env.GROQ_MODEL, ...GROQ_FALLBACK_MODELS].filter(Boolean)),
+  );
+  let lastErr = 'Groq coaching failed';
 
-  if (!res.ok) {
-    throw new AppError(502, 'Groq coaching failed', 'GROQ_ERROR');
+  for (const model of models) {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.5,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are Calora, a calm nutrition coach. Be concise, kind, non-medical. Use the user context. Avoid shame.',
+          },
+          { role: 'user', content: `Context:\n${context}\n\nQuestion:\n${message}` },
+        ],
+      }),
+    });
+
+    if (res.ok) {
+      const json = (await res.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      return json.choices[0]?.message?.content ?? '';
+    }
+
+    lastErr = (await res.text()).slice(0, 200);
+    if (!/model_not_found|decommissioned|does not exist/i.test(lastErr)) break;
   }
-  const json = (await res.json()) as {
-    choices: Array<{ message: { content: string } }>;
-  };
-  return json.choices[0]?.message?.content ?? '';
+
+  throw new AppError(502, lastErr || 'Groq coaching failed', 'GROQ_ERROR');
 }

@@ -12,7 +12,7 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('*'),
   INVITE_CODE: z.string().optional().default(''),
   GROQ_API_KEY: z.string().optional().default(''),
-  GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  GROQ_MODEL: z.string().default('openai/gpt-oss-20b'),
   GEMINI_API_KEY: z.string().optional().default(''),
   GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
   AI_DAILY_TEXT_LIMIT: z.coerce.number().int().positive().default(40),

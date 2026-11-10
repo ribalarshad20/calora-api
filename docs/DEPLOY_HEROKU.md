@@ -9,7 +9,7 @@ heroku config:set JWT_ACCESS_SECRET="at-least-32-characters-long!!"
 heroku config:set JWT_REFRESH_SECRET="at-least-32-characters-long!!"
 # Required for smart “type what you ate” AI logging (pipeline Config Vars):
 # GROQ_API_KEY=...
-# GROQ_MODEL=llama-3.3-70b-versatile
+# GROQ_MODEL=openai/gpt-oss-20b
 # Optional photo logging:
 # GEMINI_API_KEY=...
 # GEMINI_MODEL=gemini-2.0-flash
