@@ -36,7 +36,7 @@ export const waterRoutes: FastifyPluginAsync = async (app) => {
         logs: logs.map((l) => ({
           id: l._id.toString(),
           amountMl: l.amountMl,
-          createdAt: l.createdAt,
+          createdAt: l.createdAt instanceof Date ? l.createdAt.toISOString() : l.createdAt,
         })),
       },
     };
