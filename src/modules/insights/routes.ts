@@ -42,10 +42,26 @@ export const insightsRoutes: FastifyPluginAsync = async (app) => {
       ProfileModel.findOne({ userId: req.userId }),
     ]);
 
-    const byDateFood = new Map<string, number>();
+    const byDateFood = new Map<
+      string,
+      { calories: number; proteinG: number; carbsG: number; fatG: number; meals: number }
+    >();
     for (const e of entries) {
-      byDateFood.set(e.date, (byDateFood.get(e.date) ?? 0) + e.macros.calories);
+      const cur = byDateFood.get(e.date) ?? {
+        calories: 0,
+        proteinG: 0,
+        carbsG: 0,
+        fatG: 0,
+        meals: 0,
+      };
+      cur.calories += e.macros.calories;
+      cur.proteinG += e.macros.proteinG;
+      cur.carbsG += e.macros.carbsG;
+      cur.fatG += e.macros.fatG;
+      cur.meals += 1;
+      byDateFood.set(e.date, cur);
     }
+
     const byDateSteps = new Map(activities.map((a) => [a.date, a.steps]));
     const byDateWater = new Map<string, number>();
     for (const w of waters) {
@@ -53,15 +69,25 @@ export const insightsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const target = profile?.calorieTarget ?? 2000;
-    const series = days.map((date) => ({
-      date,
-      calories: Math.round(byDateFood.get(date) ?? 0),
-      steps: byDateSteps.get(date) ?? 0,
-      waterMl: byDateWater.get(date) ?? 0,
-      onTarget:
-        byDateFood.has(date) &&
-        Math.abs((byDateFood.get(date) ?? 0) - target) <= target * 0.1,
-    }));
+    const proteinTarget = profile?.proteinG ?? 120;
+    const waterGoal = profile?.waterGoalMl ?? 2500;
+
+    const series = days.map((date) => {
+      const food = byDateFood.get(date);
+      const calories = Math.round(food?.calories ?? 0);
+      return {
+        date,
+        calories,
+        proteinG: Math.round(food?.proteinG ?? 0),
+        carbsG: Math.round(food?.carbsG ?? 0),
+        fatG: Math.round(food?.fatG ?? 0),
+        meals: food?.meals ?? 0,
+        steps: byDateSteps.get(date) ?? 0,
+        waterMl: byDateWater.get(date) ?? 0,
+        onTarget: Boolean(food) && Math.abs(calories - target) <= target * 0.1,
+        waterHit: (byDateWater.get(date) ?? 0) >= waterGoal,
+      };
+    });
 
     let streak = 0;
     for (let i = series.length - 1; i >= 0; i -= 1) {
@@ -69,26 +95,56 @@ export const insightsRoutes: FastifyPluginAsync = async (app) => {
       else break;
     }
 
-    const loggedDays = series.filter((d) => d.calories > 0).length;
+    const logged = series.filter((d) => d.calories > 0);
+    const loggedDays = logged.length;
+    const waterDays = series.filter((d) => d.waterMl > 0);
     const adherence =
       loggedDays === 0
         ? 0
         : Math.round((series.filter((d) => d.onTarget).length / loggedDays) * 100);
+
+    const avg = (vals: number[]) =>
+      vals.length === 0 ? 0 : Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
+
+    const best = [...logged].sort((a, b) => a.calories - b.calories)[0];
+    const heaviest = [...logged].sort((a, b) => b.calories - a.calories)[0];
+    const bestSteps = [...series].sort((a, b) => b.steps - a.steps)[0];
+
+    let weightDelta: number | null = null;
+    if (weights.length >= 2) {
+      weightDelta =
+        Math.round((weights[weights.length - 1].weightKg - weights[0].weightKg) * 10) / 10;
+    }
 
     return {
       data: {
         from,
         to,
         calorieTarget: target,
+        proteinTarget,
+        waterGoalMl: waterGoal,
         streakDays: streak,
         adherencePct: adherence,
-        avgCalories:
-          loggedDays === 0
-            ? 0
-            : Math.round(series.reduce((s, d) => s + d.calories, 0) / loggedDays),
-        avgSteps: Math.round(
-          series.reduce((s, d) => s + d.steps, 0) / Math.max(1, series.length),
-        ),
+        loggedDays,
+        daysOnTarget: series.filter((d) => d.onTarget).length,
+        avgCalories: avg(logged.map((d) => d.calories)),
+        avgProteinG: avg(logged.map((d) => d.proteinG)),
+        avgCarbsG: avg(logged.map((d) => d.carbsG)),
+        avgFatG: avg(logged.map((d) => d.fatG)),
+        avgSteps: avg(series.map((d) => d.steps)),
+        avgWaterMl: avg(waterDays.map((d) => d.waterMl)),
+        waterHitDays: series.filter((d) => d.waterHit).length,
+        totalMeals: entries.length,
+        bestCalorieDay: best
+          ? { date: best.date, calories: best.calories }
+          : null,
+        highestCalorieDay: heaviest
+          ? { date: heaviest.date, calories: heaviest.calories }
+          : null,
+        bestStepsDay: bestSteps && bestSteps.steps > 0
+          ? { date: bestSteps.date, steps: bestSteps.steps }
+          : null,
+        weightDeltaKg: weightDelta,
         series,
         weight: weights.map((w) => ({ date: w.date, weightKg: w.weightKg })),
       },
